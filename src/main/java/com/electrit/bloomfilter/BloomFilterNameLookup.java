@@ -11,7 +11,7 @@ import java.io.OutputStream;
 import java.util.*;
 
 @SuppressWarnings("WeakerAccess")
-public class BloomFilterNameLookup {
+public class BloomFilterNameLookup implements NameLookup {
 
     public static int counter;
 
@@ -43,6 +43,7 @@ public class BloomFilterNameLookup {
         return addedPrefixes;
     }
 
+    @Override
     public List<String> lookup(String prefix, int max) {
         counter++;
 

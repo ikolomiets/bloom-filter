@@ -11,12 +11,12 @@ public class BloomNameSuggest {
     private final static Logger logger = LoggerFactory.getLogger(BloomNameSuggest.class);
     private static final String FILTER_FILE_PATH = "bloom_filter.bin";
 
-    private static BloomFilterNameLookup createBloomFilter() throws IOException {
+    private static BloomFilterNameLookup createBloomFilterNameLookup() throws IOException {
         BloomFilterNameLookup nameLookup;
-        boolean updateFilterFile = true;
+        boolean updateFilterFile = false;
         //noinspection ConstantConditions
         if (updateFilterFile) {
-            PrintStream printStream = new PrintStream(new File("filtered_lastnames.txt"));
+            //PrintStream printStream = new PrintStream(new File("longer_lastnames.txt"));
 
             nameLookup = new BloomFilterNameLookup(20000000, 0.01);
             BufferedReader lnbr = new BufferedReader(new FileReader("lastnames.txt"));
@@ -26,6 +26,8 @@ public class BloomNameSuggest {
             while ((name = lnbr.readLine()) != null) {
 
                 if (name.length() > 3) {
+                    //printStream.println(name);
+                    
                     prefixes += nameLookup.add(name);
                     if (++counter % 100000 == 0) {
                         logger.debug("Added {} names", counter);
@@ -48,7 +50,7 @@ public class BloomNameSuggest {
     }
 
     public static void main(String[] args) throws IOException {
-        BloomFilterNameLookup nameLookup = createBloomFilter();
+        NameLookup nameLookup = createBloomFilterNameLookup();
 
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
 
