@@ -15,7 +15,6 @@ public class DbNameSuggest {
     private final static Logger logger = LoggerFactory.getLogger(DbNameSuggest.class);
 
     public static void main(String[] args) throws Exception {
-
         Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
         Connection connection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
         connection.setAutoCommit(false);
@@ -47,10 +46,9 @@ public class DbNameSuggest {
         while ((line = br.readLine()) != null) {
             if (line.length() > 3) {
                 long start = System.currentTimeMillis();
-                BloomFilterNameLookup.counter = 0;
                 List<String> suggestions = nameLookup.lookup(line, 10);
                 long elapsed = System.currentTimeMillis() - start;
-                logger.debug("Found {} suggestions in {}ms ({} calls)", suggestions.size(), elapsed, BloomFilterNameLookup.counter);
+                logger.debug("Found {} suggestions in {}ms", suggestions.size(), elapsed);
                 for (String suggestion : suggestions) {
                     System.out.println("> " + suggestion);
                 }

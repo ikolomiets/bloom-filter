@@ -3,7 +3,10 @@ package com.electrit.bloomfilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -56,29 +59,33 @@ public class DbNameLookup implements NameLookup {
                     iterator.remove();
                 }
             }
-            
-            while (result.size() < max && !children.isEmpty()) {
-                iterator = children.iterator();
-                PrefixWords minPrefixWords = null;
-                int minWords = 0;
-                while (iterator.hasNext()) {
-                    PrefixWords next = iterator.next();
-                    int words = next.words();
-                    if (minPrefixWords == null) {
-                        minPrefixWords = next;
-                        minWords = words;
-                    } else if (words < minWords) {
-                        minPrefixWords = next;
-                        minWords = words;
+
+            while (result.size() + children.size() < max && !children.isEmpty()) {
+                PrefixWords minChild = null;
+                List<String> minChildWordsAndPrefixes = null;
+                for (PrefixWords child : children) {
+                    List<String> childWordsAndPrefixes = child.getWordsAndPrefixes(max - result.size() - children.size());
+                    if (minChild == null || childWordsAndPrefixes.size() < minChildWordsAndPrefixes.size()) {
+                        minChild = child;
+                        minChildWordsAndPrefixes = childWordsAndPrefixes;
                     }
                 }
-                
-                // todo
+
+                if (minChildWordsAndPrefixes != null && (result.size() + minChildWordsAndPrefixes.size() + children.size() - 1) <= max) {
+                    children.remove(minChild);
+                    result.addAll(minChildWordsAndPrefixes);
+                }
             }
+
+            for (PrefixWords child : children)
+                if (child.prefix.endsWith("."))
+                    result.add(child.prefix.substring(0, child.prefix.length() - 1));
+                else
+                    result.add(child.prefix);
 
             return result;
         }
-        
+
         private PrefixWords pullOnlyChildUp() {
             if (!prefix.endsWith(".") && children.size() == 1) {
                 PrefixWords onlyChild = children.get(0);
@@ -124,10 +131,8 @@ public class DbNameLookup implements NameLookup {
             throw new RuntimeException("Unable to execute db query for " + prefix, e);
         }
 
-        if (prefixWords == null) {
-            logger.warn("prefixWords is null");
+        if (prefixWords == null)
             return new ArrayList<>();
-        }
 
         prefixWords.compact();
         logger.debug("prefixWords size={}, words={}:\n{}", prefixWords.size(), prefixWords.words(), prefixWords);
@@ -172,35 +177,5 @@ public class DbNameLookup implements NameLookup {
 
         return result;
     }
-
-    public static void main(String[] args) throws Exception {
-        Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
-        Connection connection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
-        connection.setAutoCommit(false);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            boolean gotSQLExc = false;
-            try {
-                logger.info("Shutting database down...");
-                DriverManager.getConnection("jdbc:derby:;shutdown=true");
-            } catch (SQLException se) {
-                if (se.getSQLState().equals("XJ015")) {
-                    gotSQLExc = true;
-                }
-            }
-            if (!gotSQLExc) {
-                logger.warn("Database did not shut down normally");
-            } else {
-                logger.info("Database shut down normally");
-            }
-        }));
-
-        NameLookup nameLookup = new DbNameLookup(connection);
-        List<String> result = nameLookup.lookup("kolomi", 10);
-        for (String s : result) {
-            logger.debug("> {}", s);
-        }
-
-    }
-
+    
 }
