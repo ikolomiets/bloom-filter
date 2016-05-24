@@ -8,8 +8,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 
 @SuppressWarnings("WeakerAccess")
@@ -50,19 +48,14 @@ public class DbNameLookup1 implements NameLookup {
         }
 
         public List<String> getWordsAndPrefixes(int max) {
-            List<String> result = new ArrayList<>();
-            result.add(prefix);
-
-            Iterator<PrefixWords> iterator = children.iterator();
-            while (iterator.hasNext()) {
-                PrefixWords next = iterator.next();
-                if (next.size() == 1) {
-                    result.add(next.prefix);
-                    iterator.remove();
-                }
+            if (children.size() < max) {
+                // todo optimize
             }
-
-            // todo
+            
+            List<String> result = new ArrayList<>();
+            //noinspection Convert2streamapi
+            for (PrefixWords child : children)
+                    result.add(child.prefix + (child.size() > 1 ? "" : "."));
 
             return result;
         }
@@ -97,10 +90,10 @@ public class DbNameLookup1 implements NameLookup {
             throw new RuntimeException("Unable to execute db query for " + prefix, e);
         }
 
-        logger.debug("prefixWords size={}:\n{}", root.size(), root);
+        //logger.debug("prefixWords size={}:\n{}", root.size(), root);
+        logger.debug("prefixWords size={}, children={}", root.size(), root.getChildren().size());
 
-        return Collections.emptyList();
-        //return prefixWords.getWordsAndPrefixes(max);
+        return root.getWordsAndPrefixes(max);
     }
 
     private static void groupByPrefix(ResultSet resultSet, PrefixWords parent) throws SQLException {
@@ -144,7 +137,7 @@ public class DbNameLookup1 implements NameLookup {
                     return first.substring(0, i);
                 else
                     return null;
-        
+
         return first.substring(0, min);
     }
 
