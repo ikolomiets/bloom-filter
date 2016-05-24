@@ -33,11 +33,20 @@ public class DbNameLookup1 implements NameLookup {
             this.prefix = prefix;
         }
 
+        public void addChild(PrefixWords child) {
+            children.add(child);
+        }
+
+        public List<PrefixWords> getChildren() {
+            return children;
+        }
+
         public int size() {
-            int size = 1;
+            int size = 0;
             for (PrefixWords child : children)
                 size += child.size();
-            return size;
+
+            return size > 0 ? size : 1;
         }
 
         public List<String> getWordsAndPrefixes(int max) {
@@ -67,7 +76,7 @@ public class DbNameLookup1 implements NameLookup {
             StringBuilder sb = new StringBuilder(indent).append(prefix);
             String nextIndent = indent + ".";
             for (PrefixWords child : children) {
-                sb.append("\n").append(indent).append(child.toString(nextIndent));
+                sb.append("\n").append(child.toString(nextIndent));
             }
             return sb.toString();
         }
@@ -75,15 +84,20 @@ public class DbNameLookup1 implements NameLookup {
 
     @Override
     public List<String> lookup(String prefix, int max) {
-        PrefixWords prefixWords = new PrefixWords(prefix);
+        PrefixWords root = new PrefixWords(prefix);
         try {
             psSelect.setString(1, prefix + "%");
-            groupByPrefix(psSelect.executeQuery(), prefixWords);
+            ResultSet resultSet = psSelect.executeQuery();
+            if (resultSet.next()) {
+                String name = resultSet.getString(1);
+                root.addChild(new PrefixWords(name));
+                groupByPrefix(resultSet, root);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Unable to execute db query for " + prefix, e);
         }
 
-        logger.debug("prefixWords size={}:\n{}", prefixWords.size(), prefixWords);
+        logger.debug("prefixWords size={}:\n{}", root.size(), root);
 
         return Collections.emptyList();
         //return prefixWords.getWordsAndPrefixes(max);
@@ -94,15 +108,27 @@ public class DbNameLookup1 implements NameLookup {
             String name = resultSet.getString(1);
             if (name.startsWith(parent.prefix)) {
                 PrefixWords child = new PrefixWords(name);
-                groupByPrefix(resultSet, child);
+                if (parent.getChildren().isEmpty()) {
+                    parent.addChild(new PrefixWords(parent.prefix));
+                } else {
+                    int lastIndex = parent.getChildren().size() - 1;
+                    PrefixWords lastChild = parent.getChildren().get(lastIndex);
+                    String commonPrefix = commonPrefix(lastChild.prefix, child.prefix);
+                    if (commonPrefix == null) {
+                        throw new RuntimeException("child=" + child + "\n\nparent=" + parent);
+                    }
 
-                if (!parent.children.isEmpty()) {
-                    PrefixWords last = parent.children.get(parent.children.size() - 1);
-
-                    // if last and current share the common prefix longer than parent's - extract it and re-group
-                    String common = commonPrefix(last.prefix, name);
+                    if (!commonPrefix.equals(parent.prefix)) {
+                        PrefixWords newParent = new PrefixWords(commonPrefix);
+                        newParent.addChild(lastChild);
+                        newParent.addChild(child);
+                        parent.getChildren().set(lastIndex, newParent);
+                        groupByPrefix(resultSet, newParent);
+                        continue;
+                    }
                 }
-                parent.children.add(child);
+                parent.addChild(child);
+                groupByPrefix(resultSet, child);
             } else {
                 resultSet.previous();
                 return;
@@ -111,18 +137,15 @@ public class DbNameLookup1 implements NameLookup {
     }
 
     private static String commonPrefix(String first, String second) {
-        for (int i = 0; i < Math.min(first.length(), second.length()); i++)
+        int min = Math.min(first.length(), second.length());
+        for (int i = 0; i < min; i++)
             if (first.charAt(i) != second.charAt(i))
                 if (i > 0)
                     return first.substring(0, i);
                 else
                     return null;
-        return first.substring(0, Math.min(first.length(), second.length()));
-    }
-
-    public static void main(String[] args) {
-        String x = commonPrefix("goshax", "goshaz");
-        System.out.println(x);
+        
+        return first.substring(0, min);
     }
 
 }
