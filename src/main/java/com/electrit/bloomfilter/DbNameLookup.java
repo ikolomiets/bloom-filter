@@ -1,19 +1,14 @@
 package com.electrit.bloomfilter;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
+@SuppressWarnings("WeakerAccess")
 public class DbNameLookup implements NameLookup {
-
-    private final static Logger logger = LoggerFactory.getLogger(DbNameLookup.class);
 
     private final PreparedStatement psSelect;
 
@@ -31,79 +26,62 @@ public class DbNameLookup implements NameLookup {
             this.prefix = prefix;
         }
 
+        public void addChild(PrefixWords child) {
+            children.add(child);
+        }
+
+        public List<PrefixWords> getChildren() {
+            return children;
+        }
+
         public int size() {
-            int size = 1;
+            int size = 0;
             for (PrefixWords child : children)
                 size += child.size();
-            return size;
+
+            return size > 0 ? size : 1;
         }
 
-        public int words() {
-            int words = prefix.endsWith(".") ? 1 : 0;
-            for (PrefixWords child : children)
-                words += child.words();
-            return words;
-        }
-
-        public List<String> getWordsAndPrefixes(int max) {
+        private static List<String> getWordsAndPrefixes(List<PrefixWords> children) {
             List<String> result = new ArrayList<>();
-            if (prefix.endsWith(".")) {
-                result.add(prefix);
-            }
-
-            Iterator<PrefixWords> iterator = children.iterator();
-            while (iterator.hasNext()) {
-                PrefixWords next = iterator.next();
-                if (next.prefix.endsWith(".") && next.children.isEmpty()) {
-                    result.add(next.prefix);
-                    iterator.remove();
-                }
-            }
-
-            while (result.size() + children.size() < max && !children.isEmpty()) {
-                PrefixWords minChild = null;
-                List<String> minChildWordsAndPrefixes = null;
-                for (PrefixWords child : children) {
-                    List<String> childWordsAndPrefixes = child.getWordsAndPrefixes(max - result.size() - children.size());
-                    if (minChild == null || childWordsAndPrefixes.size() < minChildWordsAndPrefixes.size()) {
-                        minChild = child;
-                        minChildWordsAndPrefixes = childWordsAndPrefixes;
-                    }
-                }
-
-                if (minChildWordsAndPrefixes != null && (result.size() + minChildWordsAndPrefixes.size() + children.size() - 1) <= max) {
-                    children.remove(minChild);
-                    result.addAll(minChildWordsAndPrefixes);
-                }
-            }
-
+            //noinspection Convert2streamapi
             for (PrefixWords child : children)
-                if (child.prefix.endsWith("."))
-                    result.add(child.prefix.substring(0, child.prefix.length() - 1));
-                else
-                    result.add(child.prefix);
+                result.add(child.prefix + (child.size() > 1 ? "" : "."));
 
             return result;
         }
 
-        private PrefixWords pullOnlyChildUp() {
-            if (!prefix.endsWith(".") && children.size() == 1) {
-                PrefixWords onlyChild = children.get(0);
-                PrefixWords next = onlyChild.pullOnlyChildUp();
-                return next != null ? next : onlyChild;
-            }
-            return null;
-        }
+        public List<String> getWordsAndPrefixes(int max) {
+            List<String> result = new ArrayList<>();
 
-        public void compact() {
-            for (int i = 0, childrenSize = children.size(); i < childrenSize; i++) {
-                PrefixWords child = children.get(i);
-                child.compact();
-                PrefixWords onlyChild = child.pullOnlyChildUp();
-                if (onlyChild != null) {
-                    children.set(i, onlyChild);
+            List<PrefixWords> optimalChildren = new ArrayList<>(this.children);
+
+            while (result.size() + optimalChildren.size() < max) {
+                List<String> minWordsAndPrefixes = null;
+                int minChildIdx = -1;
+                for (int i = 0; i < optimalChildren.size(); i++) {
+                    PrefixWords child = optimalChildren.get(i);
+                    if (child.getChildren().isEmpty())
+                        continue;
+
+                    List<String> wordsAndPrefixes = child.getWordsAndPrefixes(max - optimalChildren.size() + 1);
+                    if (minWordsAndPrefixes == null || wordsAndPrefixes.size() < minWordsAndPrefixes.size()) {
+                        minWordsAndPrefixes = wordsAndPrefixes;
+                        minChildIdx = i;
+                    }
+                }
+
+                if (minWordsAndPrefixes != null && optimalChildren.size() - 1 + result.size() + minWordsAndPrefixes.size() <= max) {
+                    optimalChildren.remove(minChildIdx);
+                    result.addAll(minWordsAndPrefixes);
+                } else {
+                    break;
                 }
             }
+
+            result.addAll(getWordsAndPrefixes(optimalChildren));
+
+            return result;
         }
 
         @Override
@@ -115,7 +93,7 @@ public class DbNameLookup implements NameLookup {
             StringBuilder sb = new StringBuilder(indent).append(prefix);
             String nextIndent = indent + ".";
             for (PrefixWords child : children) {
-                sb.append("\n").append(indent).append(child.toString(nextIndent));
+                sb.append("\n").append(child.toString(nextIndent));
             }
             return sb.toString();
         }
@@ -123,59 +101,65 @@ public class DbNameLookup implements NameLookup {
 
     @Override
     public List<String> lookup(String prefix, int max) {
-        PrefixWords prefixWords;
+        PrefixWords root = new PrefixWords(prefix);
         try {
             psSelect.setString(1, prefix + "%");
-            prefixWords = groupByAbc(psSelect.executeQuery(), prefix);
+            ResultSet resultSet = psSelect.executeQuery();
+            if (resultSet.next()) {
+                String name = resultSet.getString(1);
+                root.addChild(new PrefixWords(name));
+                groupByPrefix(resultSet, root);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Unable to execute db query for " + prefix, e);
         }
 
-        if (prefixWords == null)
-            return new ArrayList<>();
-
-        prefixWords.compact();
-        logger.debug("prefixWords size={}, words={}:\n{}", prefixWords.size(), prefixWords.words(), prefixWords);
-
-        return prefixWords.getWordsAndPrefixes(max);
+        return root.getWordsAndPrefixes(max);
     }
 
-    private static PrefixWords groupByAbc(ResultSet resultSet, String prefix) throws SQLException {
-        if (!resultSet.next())
-            return null;
+    private static void groupByPrefix(ResultSet resultSet, PrefixWords parent) throws SQLException {
+        while (resultSet.next()) {
+            String name = resultSet.getString(1);
+            if (name.startsWith(parent.prefix)) {
+                PrefixWords child = new PrefixWords(name);
+                if (parent.getChildren().isEmpty()) {
+                    parent.addChild(new PrefixWords(parent.prefix));
+                } else {
+                    int lastIndex = parent.getChildren().size() - 1;
+                    PrefixWords lastChild = parent.getChildren().get(lastIndex);
+                    String commonPrefix = commonPrefix(lastChild.prefix, child.prefix);
+                    if (commonPrefix == null) {
+                        throw new RuntimeException("child=" + child + "\n\nparent=" + parent);
+                    }
 
-        String name = resultSet.getString(1);
-        PrefixWords result;
-        if (name.equals(prefix)) {
-            result = new PrefixWords(prefix + ".");
-            name = null;
-        } else {
-            result = new PrefixWords(prefix);
-        }
-
-        for (char extension = 'a'; extension <= 'z'; extension++) {
-            if (name == null) {
-                if (!resultSet.next())
-                    break;
-                name = resultSet.getString(1);
-            }
-
-            if (name.startsWith(prefix)) {
-                String extendedPrefix = prefix + extension;
-                if (name.startsWith(extendedPrefix)) {
-                    resultSet.previous();
-                    PrefixWords extPrefixWords = groupByAbc(resultSet, extendedPrefix);
-                    if (extPrefixWords != null)
-                        result.children.add(extPrefixWords);
-                    name = null;
+                    if (!commonPrefix.equals(parent.prefix)) {
+                        PrefixWords newParent = new PrefixWords(commonPrefix);
+                        newParent.addChild(lastChild);
+                        newParent.addChild(child);
+                        parent.getChildren().set(lastIndex, newParent);
+                        groupByPrefix(resultSet, newParent);
+                        continue;
+                    }
                 }
+                parent.addChild(child);
+                groupByPrefix(resultSet, child);
             } else {
                 resultSet.previous();
-                break;
+                return;
             }
         }
-
-        return result;
     }
-    
+
+    private static String commonPrefix(String first, String second) {
+        int min = Math.min(first.length(), second.length());
+        for (int i = 0; i < min; i++)
+            if (first.charAt(i) != second.charAt(i))
+                if (i > 0)
+                    return first.substring(0, i);
+                else
+                    return null;
+
+        return first.substring(0, min);
+    }
+
 }

@@ -4,19 +4,48 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.PrintStream;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 
 public class PrintAllNames {
 
     private final static Logger logger = LoggerFactory.getLogger(PrintAllNames.class);
     private static final String FILTER_FILE_PATH = "bloom_filter.bin";
-    private static BloomFilterNameLookup nameLookup;
+    private static NameLookup nameLookup;
 
-    public PrintAllNames() throws IOException {
-        logger.debug("Loading filter data from file...");
-        nameLookup = new BloomFilterNameLookup(FILTER_FILE_PATH);
-        logger.debug("Filter is ready.");
+    public PrintAllNames(boolean useDb) throws Exception {
+        if (useDb) {
+            Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
+            Connection connection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
+            connection.setAutoCommit(false);
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                boolean gotSQLExc = false;
+                try {
+                    logger.info("Shutting database down...");
+                    DriverManager.getConnection("jdbc:derby:;shutdown=true");
+                } catch (SQLException se) {
+                    if (se.getSQLState().equals("XJ015")) {
+                        gotSQLExc = true;
+                    }
+                }
+                if (!gotSQLExc) {
+                    logger.warn("Database did not shut down normally");
+                } else {
+                    logger.info("Database shut down normally");
+                }
+            }));
+
+            logger.debug("Connecting to db...");
+            nameLookup = new DbNameLookup(connection);
+            logger.debug("DbNameLookup is ready.");
+        } else {
+            logger.debug("Loading filter data from file...");
+            nameLookup = new BloomFilterNameLookup(FILTER_FILE_PATH);
+            logger.debug("Filter is ready.");
+        }
     }
 
     public int printAllNames(String prefix, PrintStream stream) {
@@ -32,9 +61,10 @@ public class PrintAllNames {
         return words;
     }
 
-    public static void main(String[] args) throws IOException {
-        PrintAllNames printAllNames = new PrintAllNames();
-        PrintStream printStream = new PrintStream(new File("bloom_names.txt"));
+    public static void main(String[] args) throws Exception {
+        PrintAllNames printAllNames = new PrintAllNames(false);
+        //PrintStream printStream = new PrintStream(new File("bloom_names.txt"));
+        PrintStream printStream = new PrintStream(new File("db_names.txt"));
         long start = System.currentTimeMillis();
         for (char c1 = 'a'; c1 <= 'z'; c1++) {
             for (char c2 = 'a'; c2 <= 'z'; c2++) {
