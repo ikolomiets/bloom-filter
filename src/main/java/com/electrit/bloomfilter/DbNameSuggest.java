@@ -16,7 +16,7 @@ public class DbNameSuggest {
 
     public static void main(String[] args) throws Exception {
         Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
-        Connection connection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
+        Connection connection = DriverManager.getConnection("jdbc:derby:../derbydb/lastnames;");
         connection.setAutoCommit(false);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

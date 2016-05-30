@@ -13,8 +13,6 @@ import java.util.*;
 @SuppressWarnings("WeakerAccess")
 public class BloomFilterNameLookup implements NameLookup {
 
-    public static int counter;
-
     private static final int MIN_PREFIX_LENGTH = 4;
 
     private final BloomFilter<CharSequence> bloomFilter;
@@ -45,8 +43,6 @@ public class BloomFilterNameLookup implements NameLookup {
 
     @Override
     public List<String> lookup(String prefix, int max) {
-        counter++;
-
         if (!bloomFilter.mightContain(prefix))
             return Collections.emptyList();
 

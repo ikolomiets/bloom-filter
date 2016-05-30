@@ -18,7 +18,7 @@ public class LastnamesDbIngest {
     public static void main(String[] args) throws IOException, ClassNotFoundException, SQLException {
 
         Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
-        Connection dbConnection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
+        Connection dbConnection = DriverManager.getConnection("jdbc:derby:../derbydb/lastnames;");
         dbConnection.setAutoCommit(false);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

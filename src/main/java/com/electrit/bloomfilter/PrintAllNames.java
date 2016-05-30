@@ -14,11 +14,12 @@ public class PrintAllNames {
     private final static Logger logger = LoggerFactory.getLogger(PrintAllNames.class);
     private static final String FILTER_FILE_PATH = "bloom_filter.bin";
     private static NameLookup nameLookup;
+    private int printCount = 0;
 
     public PrintAllNames(boolean useDb) throws Exception {
         if (useDb) {
             Class.forName("org.apache.derby.jdbc.EmbeddedDriver");
-            Connection connection = DriverManager.getConnection("jdbc:derby:../../derbydb/lastnames;");
+            Connection connection = DriverManager.getConnection("jdbc:derby:../derbydb/lastnames;");
             connection.setAutoCommit(false);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -49,6 +50,7 @@ public class PrintAllNames {
     }
 
     public int printAllNames(String prefix, PrintStream stream) {
+        printCount++;
         int words = 0;
         for (String result : nameLookup.lookup(prefix, 10)) {
             if (result.endsWith(".")) {
@@ -62,7 +64,7 @@ public class PrintAllNames {
     }
 
     public static void main(String[] args) throws Exception {
-        PrintAllNames printAllNames = new PrintAllNames(false);
+        PrintAllNames printAllNames = new PrintAllNames(true);
         //PrintStream printStream = new PrintStream(new File("bloom_names.txt"));
         PrintStream printStream = new PrintStream(new File("db_names.txt"));
         long start = System.currentTimeMillis();
@@ -79,6 +81,15 @@ public class PrintAllNames {
             }
         }
         logger.debug("total time: {} sec.", (System.currentTimeMillis() - start) / 1000);
+        logger.debug("total calls: {} ", printAllNames.printCount);
+
+        /*
+            22:30:26.784 [main] DEBUG c.electrit.bloomfilter.PrintAllNames - total time: 64 sec.
+            22:30:26.784 [main] DEBUG c.electrit.bloomfilter.PrintAllNames - total lookups: 1.483.064
+
+            22:43:57.370 [main] DEBUG c.electrit.bloomfilter.PrintAllNames - total time: 423 sec.
+            22:43:57.370 [main] DEBUG c.electrit.bloomfilter.PrintAllNames - total lookups: 1.000.396.049
+         */
     }
 
 }

@@ -58,10 +58,9 @@ public class BloomNameSuggest {
         while ((line = br.readLine()) != null) {
             if (line.length() > 3) {
                 long start = System.currentTimeMillis();
-                BloomFilterNameLookup.counter = 0;
                 List<String> suggestions = nameLookup.lookup(line, 10);
                 long elapsed = System.currentTimeMillis() - start;
-                logger.debug("Found {} suggestions in {}ms ({} calls)", suggestions.size(), elapsed, BloomFilterNameLookup.counter);
+                logger.debug("Found {} suggestions in {}ms", suggestions.size(), elapsed);
                 for (String suggestion : suggestions) {
                     System.out.println("> " + suggestion);
                 }
